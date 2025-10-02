@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Estadisticas de Proyectos 2021-2025</title>
+    
+    <link rel="stylesheet" href="css/leaflet.css">
+    <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+    <link rel="stylesheet" href="css/qgis2web.css">
+    <link rel="stylesheet" href="css/fontawesome-all.min.css">
+    <link rel="stylesheet" href="css/leaflet.photon.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    
+    <style>
+        /* Estilos generales y del Mapa */
+        * { box-sizing: border-box; }
+        html, body, #map { 
+            width: 100%; 
+            height: 100%; 
+            padding: 0; 
+            margin: 0; 
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+        }
+        
+        /* Panel de texto informativo (Inferior Izquierdo) */
+        #texto {
+            position: fixed;
+            bottom: 10px;
+            left: 1%;
+            right: 75%;
+            padding: 15px;
+            background-color: #ffffff;
+            border: 1px solid #ccc;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-align: center;
+            font-size: 16px;
+            z-index: 9999;
+            animation: fadeInUp 1s ease-out;
+        }
+        
+        #cerrarTexto {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: #777;
+        }
+        
+        #cerrarTexto:hover { color: #333; }
+        
+        .logo-container { margin-bottom: 0.5rem; }
+        
+        #logo {
+            width: 60%;
+            max-width: 80px;
+            height: auto;
+        }
+
+        /* ------------------------------------------- */
+        /* --- ESTILOS DE BLOQUES ESTADÍSTICOS (POSICIÓN PROPORCIONAL) --- */
+        /* ------------------------------------------- */
+        #statsContainer {
+            position: absolute; 
+            top: 12vh; /* AJUSTE CLAVE: 12% de la altura visible, se adapta al tamaño */
+            transform: translateY(0); /* Fijo desde arriba */
+            left: 10px;
+            z-index: 1000; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+            max-width: 200px; 
+            opacity: 0; 
+            transition: opacity 0.5s ease-in-out;
+            
+            min-height: 100px; 
+            max-height: calc(88vh - 180px); /* 88vh es lo que queda de 100vh - 12vh de top */
+            overflow-y: auto;
+        }
+        
+        /* Botón de cierre para el panel de estadísticas */
+        #cerrarStats {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: #555;
+            z-index: 1001;
+            padding: 0;
+            line-height: 1;
+        }
+
+        #statsContainer.hidden {
+            opacity: 0;
+            pointer-events: none;
+            visibility: hidden; 
+        }
+
+        .stat-block {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            width: 100%; 
+            min-width: 150px; 
+            text-align: center;
+            transition: transform 0.2s ease;
+            cursor: default;
+            border-left: 5px solid #3498db; 
+        }
+        
+        /* Añadir espacio al bloque superior para el botón (sólo en el primer bloque) */
+        #total-proyectos-block {
+            padding-top: 25px; 
+            position: relative;
+        }
+
+        .stat-block:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-block .stat-label {
+            font-size: 14px;
+            color: #7f8c8d; 
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .stat-block .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        /* Colores de acento */
+        #total-proyectos-block { border-left-color: #3498db; }
+        #promedio-anual-block { border-left-color: #e67e22; }
+        #max-ano-block { border-left-color: #2ecc71; }
+        
+        /* Panel del gráfico (Derecha) */
+        #chartPanel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 350px;
+            max-width: 90vw;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            padding: 15px;
+            z-index: 1000;
+            transition: all 0.3s ease;
+            max-height: 80vh;
+            overflow: hidden;
+            display: none; 
+        }
+        
+        #toggleChart {
+            display: none;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1001;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        
+        #chartTitle {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 200px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        /* Leyenda de la tabla */
+        .legend-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        .legend-table th {
+            background-color: #f5f5f5;
+            padding: 5px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+        }
+        
+        .legend-table td {
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .legend-color {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 5px;
+            border-radius: 2px;
+        }
+        
+        /* Botón de cerrar gráfico */
+        #cerrarGrafico {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: #777;
+            z-index: 1002;
+        }
+        
+        #cerrarGrafico:hover { color: #333; }
+        
+        /* Popups del mapa */
+        .leaflet-popup-content table {
+            width: 100%;
+            font-size: 12px;
+            color: #2c3e50;
+            background-color: #ffffff;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .leaflet-popup-content th,
+        .leaflet-popup-content td {
+            padding: 4px 6px;
+            line-height: 1.2;
+            text-align: center;
+            vertical-align: middle;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .leaflet-popup-content th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+            color: #34495e;
+        }
+        
+        .leaflet-popup-content tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .leaflet-popup-content {
+            padding: 0 !important;
+        }
+        
+        /* Animaciones */
+        @keyframes fadeInUp {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes fadeOutUp {
+            0% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+        
+        @keyframes slideInRight {
+            0% { opacity: 0; transform: translateX(100%); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+        
+        @keyframes slideOutRight {
+            0% { opacity: 1; transform: translateX(0); }
+            100% { opacity: 0; transform: translateX(100%); }
+        }
+        
+        /* RESPONSIVIDAD MÓVIL (CORRECCIÓN FINAL) */
+        @media (max-width: 768px) {
+            
+            #statsContainer {
+                top: 75px; /* Valor fijo alto para dejar espacio al zoom en móvil */
+                transform: none; 
+                left: 10px;
+                max-width: calc(100% - 20px); 
+                width: auto; 
+                flex-direction: column; 
+                justify-content: flex-start;
+                gap: 5px; 
+                
+                /* Altura máxima para evitar chocar con #texto */
+                max-height: calc(100vh - 170px); 
+                overflow-y: auto; 
+            }
+
+            .stat-block {
+                min-width: 130px; 
+                max-width: 100%;
+                padding: 10px;
+            }
+
+            .stat-block .stat-value {
+                font-size: 20px;
+            }
+
+            .stat-block .stat-label {
+                font-size: 12px;
+            }
+
+            #texto {
+                right: 50%;
+                font-size: 14px;
+                padding: 12px;
+                bottom: 60px;
+            }
+            
+            #chartPanel {
+                width: 95%;
+                max-width: 95%;
+                right: 2.5%;
+                left: 2.5%;
+                top: auto;
+                bottom: 10px;
+                max-height: 65vh;
+                padding: 10px;
+                transition: all 0.3s ease;
+                animation: slideInRight 0.3s ease-out;
+            }
+            
+            #chartPanel.hidden {
+                animation: slideOutRight 0.3s ease-out forwards;
+            }
+            
+            #toggleChart {
+                display: block;
+                bottom: 10px;
+                right: 10px;
+                top: auto;
+            }
+            
+            .chart-container {
+                height: 160px;
+            }
+            
+            .legend-table {
+                font-size: 11px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            #texto {
+                right: 30%;
+                font-size: 13px;
+                padding: 10px;
+                bottom: 50px;
+            }
+            
+            #chartPanel {
+                padding: 8px;
+                max-height: 60vh;
+            }
+            
+            .chart-container {
+                height: 140px;
+            }
+            
+            .stat-block {
+                min-width: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <div id="statsContainer">
+        <button id="cerrarStats">✕</button>
+        
+        <div class="stat-block" id="total-proyectos-block">
+            <div class="stat-label" id="totalProjectsLabel">Total Proyectos (Comuna)</div>
+            <div class="stat-value" id="totalProyectosValue">0</div>
+        </div>
+
+        <div class="stat-block" id="promedio-anual-block">
+            <div class="stat-label">Promedio Anual</div>
+            <div class="stat-value" id="promedioAnualValue">0</div>
+        </div>
+
+        <div class="stat-block" id="max-ano-block">
+            <div class="stat-label">Año de Mayor Inversión</div>
+            <div class="stat-value" id="maxAnoValue">N/A</div>
+        </div>
+    </div>
+    
+    <div id="texto">
+        <button id="cerrarTexto">✕</button>
+        <div class="logo-container">
+            <a href="http://mapas.municoquimbo.cl/" target="_blank">
+                <img id="logo" src="images/logo.png" alt="Logo Municipalidad de Coquimbo">
+            </a>
+        </div>
+        <strong>
+            <br>
+            <span style="font-size: 18px;">Estadisticas Proyectos 2021-2025</span><br>
+            Ilustre Municipalidad de Coquimbo<br><br>
+        </strong>
+    </div>
+    
+    <button id="toggleChart">📊 Gráfico</button>
+    
+    <div id="chartPanel">
+        <button id="cerrarGrafico">✕</button>
+        <div id="chartTitle">Distribución por Años</div>
+        <div class="chart-container">
+            <canvas id="zonaChart"></canvas>
+        </div>
+        
+        <table class="legend-table" id="chartLegend">
+            <tr>
+                <th>Año</th>
+                <th>Valor</th>
+                <th>Porcentaje</th>
+            </tr>
+            </table>
+    </div>
+
+    <script src="js/qgis2web_expressions.js"></script>
+    <script src="js/leaflet.js"></script>
+    <script src="js/L.Control.Layers.Tree.min.js"></script>
+    <script src="js/leaflet.rotatedMarker.js"></script>
+    <script src="js/leaflet.pattern.js"></script>
+    <script src="js/leaflet-hash.js"></script>
+    <script src="js/Autolinker.min.js"></script>
+    <script src="js/rbush.min.js"></script>
+    <script src="js/labelgun.min.js"></script>
+    <script src="js/labels.js"></script>
+    <script src="js/leaflet.photon.js"></script>
+    <script src="data/SECTORESESTADISTICAS_1.js"></script>
+    
+    <script>
+        // Registrar el plugin de etiquetas de datos
+        Chart.register(ChartDataLabels);
+        
+        // Inicializar mapa
+        const map = L.map('map', {
+            zoomControl: false,
+            maxZoom: 28,
+            minZoom: 1,
+            center: [-29.9803, -71.3170], 
+            zoom: 13
+        });
+        
+        // Variables globales
+        let zonaChartInstance = null;
+        let currentChartType = 'pie';
+        const hash = new L.Hash(map);
+        const autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        const boundsGroup = L.featureGroup([]);
+        
+        // Colores para las zonas
+        const zonaFillColors = {
+            'CANTERA BAJA': 'rgba(237,217,42,0.5)', 'GUANAQUEROS': 'rgba(156,207,79,0.5)',
+            'LA HERRADURA': 'rgba(238,60,208,0.5)', 'PARTE ALTA': 'rgba(28,168,103,0.5)',
+            'PEÑUELAS': 'rgba(15,81,223,0.5)', 'RINCONADA': 'rgba(102,127,209,0.5)',
+            'RURAL': 'rgba(128,174,10,0.5)', 'SAN JUAN': 'rgba(86,64,159,0.5)',
+            'SINDEMPART': 'rgba(146,162,57,0.5)', 'TIERRAS BLANCAS': 'rgba(85,171,158,0.5)',
+            'TONGOY': 'rgba(35,88,213,0.5)'
+        };
+        
+        // Colores para el gráfico
+        const chartColors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6'];
+        
+        // Configuración de atribución
+        map.attributionControl.setPrefix(
+            '<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; ' +
+            '<a href="https://leafletjs.com">Leaflet</a> &middot; ' +
+            '<a href="https://qgis.org">QGIS</a>'
+        );
+        
+        // Inicializar controles y capa base
+        L.control.zoom({ position: 'topleft' }).addTo(map);
+        
+        map.createPane('pane_OpenStreetMap_0');
+        map.getPane('pane_OpenStreetMap_0').style.zIndex = 400;
+        
+        const baseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OpenStreetMap_0', opacity: 1.0, attribution: '', minZoom: 1, maxZoom: 28,
+            minNativeZoom: 0, maxNativeZoom: 19
+        });
+        
+        map.addLayer(baseLayer);
+        
+        // Capa de sectores
+        map.createPane('pane_SECTORESESTADISTICAS_1');
+        map.getPane('pane_SECTORESESTADISTICAS_1').style.zIndex = 401;
+        map.getPane('pane_SECTORESESTADISTICAS_1').style['mix-blend-mode'] = 'normal';
+        
+        const sectorLayer = L.geoJson(json_SECTORESESTADISTICAS_1, {
+            attribution: '', interactive: true, dataVar: 'json_SECTORESESTADISTICAS_1',
+            layerName: 'layer_SECTORESESTADISTICAS_1', pane: 'pane_SECTORESESTADISTICAS_1',
+            onEachFeature: pop_SECTORESESTADISTICAS_1, style: style_SECTORESESTADISTICAS_1_0,
+        });
+        
+        boundsGroup.addLayer(sectorLayer);
+        map.addLayer(sectorLayer);
+        
+        // CORRECCIÓN: Forzar el cálculo de tamaño de Leaflet para evitar mapa en blanco
+        setTimeout(function () { 
+            map.invalidateSize(); 
+            updateStatsOnMove(); 
+        }, 400); 
+
+        
+        /* ================================================= */
+        /* === FUNCIONALIDAD DE BLOQUES ESTADÍSTICOS DINÁMICOS === */
+        /* ================================================= */
+
+        function calculateAndDisplayStats(data, context = 'Comuna') {
+            const years = ['2021', '2022', '2023', '2024', '2025'];
+            let totalProyectos = 0;
+            const projectsByYear = {};
+            
+            years.forEach(year => projectsByYear[year] = 0);
+
+            data.features.forEach(feature => {
+                const props = feature.properties;
+                const totalZona = props['Total'] || years.reduce((sum, year) => sum + (props[year] || 0), 0);
+                totalProyectos += totalZona;
+                
+                years.forEach(year => {
+                    projectsByYear[year] += props[year] || 0;
+                });
+            });
+            
+            // 1. Promedio Anual
+            const numYears = years.length;
+            const promedioAnual = numYears > 0 ? Math.round(totalProyectos / numYears) : 0;
+
+            // 2. Año Máximo
+            let maxProjects = -1;
+            let maxYear = 'N/A';
+            
+            for (const year of years) {
+                if (projectsByYear[year] > maxProjects) {
+                    maxProjects = projectsByYear[year];
+                    maxYear = year;
+                }
+            }
+            
+            // 3. Actualizar el DOM y mostrar
+            document.getElementById('totalProyectosValue').textContent = totalProyectos.toLocaleString('es-CL');
+            document.getElementById('promedioAnualValue').textContent = promedioAnual.toLocaleString('es-CL');
+            document.getElementById('maxAnoValue').textContent = `${maxYear} (${maxProjects.toLocaleString('es-CL')})`;
+            
+            // Actualizar la etiqueta para indicar el contexto de los datos
+            const projectsLabel = document.getElementById('totalProjectsLabel');
+            if (projectsLabel) {
+                projectsLabel.textContent = `Total Proyectos (${context})`;
+            }
+            
+            // Asegura que el contenedor se muestre si no tiene la clase 'hidden'
+            if (!document.getElementById('statsContainer').classList.contains('hidden')) {
+                 document.getElementById('statsContainer').style.opacity = 1;
+            }
+        }
+
+        /* === FUNCIÓN: ACTUALIZAR ESTADÍSTICAS POR VISTA (DINÁMICO) === */
+        function updateStatsOnMove() {
+            if (typeof json_SECTORESESTADISTICAS_1 === 'undefined') return;
+
+            const currentBounds = map.getBounds();
+            const allFeatures = json_SECTORESESTADISTICAS_1.features;
+            const visibleFeatures = [];
+
+            // 1. Filtrar las geometrías visibles
+            allFeatures.forEach(feature => {
+                const featureBounds = L.geoJson(feature).getBounds();
+                const center = featureBounds.getCenter();
+                
+                // Usamos el centro del polígono para determinar la visibilidad
+                if (currentBounds.contains(center)) {
+                    visibleFeatures.push(feature);
+                }
+            });
+
+            const visibleData = {
+                type: "FeatureCollection",
+                features: visibleFeatures
+            };
+
+            const context = visibleFeatures.length === allFeatures.length ? 'Comuna' : 'En Vista';
+            
+            // 2. Recalcular y mostrar las estadísticas con los datos filtrados
+            calculateAndDisplayStats(visibleData, context);
+            
+            // 3. Opcional: Actualizar el gráfico si solo se ve 1 zona
+            if (visibleFeatures.length === 1 && document.getElementById('chartPanel').style.display === 'block') {
+                 const props = visibleFeatures[0].properties;
+                 updateChart(props['Zona'], props);
+            } else if (visibleFeatures.length === 0) {
+                document.getElementById('maxAnoValue').textContent = 'N/A';
+            }
+        }
+        
+        // Escucha eventos de movimiento/zoom en el mapa para actualizar las estadísticas dinámicas
+        map.on('moveend', updateStatsOnMove);
+
+
+        /* ================================================= */
+        /* === FUNCIONES DE GRÁFICO (Corregidas) === */
+        /* ================================================= */
+
+        function updateChart(zona, props, chartType = null) {
+            const ctx = document.getElementById('zonaChart').getContext('2d');
+            const labels = ['2021', '2022', '2023', '2024', '2025'];
+            const data = [
+                props['2021'] || 0,  props['2022'] || 0,  props['2023'] || 0,  
+                props['2024'] || 0,  props['2025'] || 0
+            ];
+            
+            const useChartType = chartType || currentChartType;
+            const total = data.reduce((a, b) => a + b, 0);
+            const percentages = data.map(value => total > 0 ? Math.round((value / total) * 100) : 0);
+            
+            document.getElementById('chartTitle').textContent = `Distribución por Años - Zona: ${zona}`;
+            updateLegend(labels, data, percentages);
+            showChartPanel();
+            
+            if (zonaChartInstance) {
+                zonaChartInstance.destroy();
+            }
+            
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: true,
+                layout: { padding: { top: 10, bottom: 20, left: 10, right: 10 } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const percentage = percentages[context.dataIndex];
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
+                    },
+                    datalabels: { display: false } 
+                }
+            };
+            
+            if (useChartType === 'pie') {
+                Object.assign(commonOptions.plugins, {
+                    datalabels: {
+                        color: '#fff', 
+                        font: { weight: 'bold', size: 11 },
+                        formatter: (value, context) => {
+                            const percentage = percentages[context.dataIndex];
+                            return percentage > 5 ? `${percentage}%` : '';
+                        }
+                    }
+                });
+                Object.assign(commonOptions, { aspectRatio: 1.5 });
+            }
+            
+            if (useChartType === 'bar') {
+                Object.assign(commonOptions, {
+                    indexAxis: 'y',
+                    scales: { x: { beginAtZero: true }, y: {} }
+                });
+            }
+            
+            zonaChartInstance = new Chart(ctx, {
+                type: useChartType,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: chartColors,
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    }]
+                },
+                options: commonOptions
+            });
+            
+            setTimeout(adjustPanelHeight, 100);
+        }
+
+        function updateLegend(labels, data, percentages) {
+            const legend = document.getElementById('chartLegend');
+            while (legend.rows.length > 1) { legend.deleteRow(1); }
+            
+            labels.forEach((label, index) => {
+                if (data[index] > 0 || percentages[index] > 0) {
+                    const row = legend.insertRow();
+                    const yearCell = row.insertCell();
+                    const colorBox = document.createElement('span');
+                    colorBox.className = 'legend-color';
+                    colorBox.style.backgroundColor = chartColors[index];
+                    yearCell.appendChild(colorBox);
+                    yearCell.appendChild(document.createTextNode(label));
+                    const valueCell = row.insertCell();
+                    valueCell.textContent = data[index];
+                    const percentCell = row.insertCell();
+                    percentCell.textContent = `${percentages[index]}%`;
+                }
+            });
+        }
+
+        function adjustPanelHeight() {
+            const chartPanel = document.getElementById('chartPanel');
+            const legend = document.getElementById('chartLegend');
+            const chartHeight = document.querySelector('.chart-container').offsetHeight;
+            const legendHeight = legend.offsetHeight;
+            const titleHeight = document.getElementById('chartTitle').offsetHeight;
+            const padding = 50;
+            const totalHeight = chartHeight + legendHeight + titleHeight + padding;
+            const maxHeight = window.innerHeight * 0.7;
+            
+            if (totalHeight > maxHeight) {
+                chartPanel.style.maxHeight = maxHeight + 'px';
+                chartPanel.style.overflowY = 'auto';
+            } else {
+                chartPanel.style.maxHeight = totalHeight + 'px';
+                chartPanel.style.overflowY = 'visible';
+            }
+        }
+        
+        /* ================================================= */
+        /* === OTRAS FUNCIONES Y UTILIDADES === */
+        /* ================================================= */
+
+        function isSmallScreen() { return window.innerWidth <= 768; }
+        
+        function initChartPanelState() {
+            const chartPanel = document.getElementById('chartPanel');
+            const toggleButton = document.getElementById('toggleChart');
+            if (isSmallScreen()) {
+                chartPanel.style.display = 'none';
+                currentChartType = 'bar';
+                chartPanel.classList.add('mobile-optimized');
+                toggleButton.style.display = 'block'; 
+            } else {
+                currentChartType = 'pie';
+                chartPanel.style.display = 'block';
+                chartPanel.classList.remove('mobile-optimized');
+                toggleButton.style.display = 'none';
+            }
+        }
+        
+        // Toggle Functionality for Stats Panel
+        document.getElementById('cerrarStats').addEventListener('click', function() {
+            const statsContainer = document.getElementById('statsContainer');
+            const isHidden = statsContainer.classList.toggle('hidden');
+            
+            statsContainer.style.opacity = isHidden ? 0 : 1;
+        });
+
+
+        initChartPanelState();
+        window.addEventListener('resize', initChartPanelState);
+        
+        document.getElementById('cerrarTexto').addEventListener('click', function() {
+            const textoPanel = document.getElementById('texto');
+            textoPanel.style.animation = 'fadeOutUp 0.5s ease-out forwards';
+            setTimeout(() => { textoPanel.style.display = 'none'; }, 500);
+        });
+        
+        document.getElementById('cerrarGrafico').addEventListener('click', function() {
+            const chartPanel = document.getElementById('chartPanel');
+            chartPanel.classList.add('hidden');
+            setTimeout(() => { chartPanel.style.display = 'none'; chartPanel.classList.remove('hidden'); }, 300);
+        });
+        
+        window.addEventListener('resize', function() {
+            if (zonaChartInstance) {
+                setTimeout(() => { zonaChartInstance.resize(); }, 300);
+            }
+        });
+        
+        function createPopupRow(label, value) {
+            if (value === null) return '';
+            return `<tr><th scope="row">${label}</th><td>${autolinker.link(String(value))}</td></tr>`;
+        }
+        
+        function showChartPanel() {
+            const chartPanel = document.getElementById('chartPanel');
+            chartPanel.style.display = 'block';
+            chartPanel.classList.remove('hidden');
+        }
+        
+        function style_SECTORESESTADISTICAS_1_0(feature) {
+            const zona = String(feature.properties['Zona']);
+            return {
+                pane: 'pane_SECTORESESTADISTICAS_1', opacity: 1, color: 'rgba(35,35,35,1.0)',
+                dashArray: '', lineCap: 'butt', lineJoin: 'miter', weight: 1.0, fill: true,
+                fillOpacity: 1, fillColor: zonaFillColors[zona] || 'rgba(75,65,216,1.0)', interactive: true
+            };
+        }
+        
+        function pop_SECTORESESTADISTICAS_1(feature, layer) {
+            const props = feature.properties;
+            
+            if (isSmallScreen()) {
+                layer.on('click', function() {
+                    updateChart(props['Zona'], props);
+                });
+                return;
+            }
+            
+            const popupContent = `
+                <table>
+                    ${createPopupRow('Zona', props['Zona'])}
+                    ${createPopupRow('Total', props['Total'])}
+                    ${createPopupRow('2025', props['2025'])}
+                    ${createPopupRow('2024', props['2024'])}
+                    ${createPopupRow('2023', props['2023'])}
+                    ${createPopupRow('2022', props['2022'])}
+                    ${createPopupRow('2021', props['2021'])}
+                </table>
+            `;
+            
+            const content = popupContent.replace(/null/g, '').replace(/undefined/g, ''); 
+            
+            layer.on('click', function() {
+                updateChart(props['Zona'], props);
+            });
+            
+            layer.bindPopup(content, { maxHeight: 400 });
+        }
+    </script>
+</body>
+</html>
